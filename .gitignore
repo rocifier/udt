@@ -1,3 +1,4 @@
 /node_modules
 /build
 /.proof.out
+.DS_Store

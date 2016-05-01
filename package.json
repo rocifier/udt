@@ -13,9 +13,6 @@
   , "url": "http://github.com/rocifier/udt.git"
   }
 , "scripts" : { "test": "(proof run t/*/*.t.js | tee .proof.out | proof progress) || (proof errors < .proof.out)" }
-, "devDependencies":
-  { "proof": "0.0.20"
-  }
 , "dependencies":
   { "packet": "git://github.com/bigeasy/packet.git#e04287354e20dceb1dd0436eb858732363936367"
   }
