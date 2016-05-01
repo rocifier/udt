@@ -37,6 +37,10 @@ var packets = exports.packets =
   , b32 => receivingRate \
   , b32 => linkCapacity \
   '
+, messagedrop: '\
+    b32 => firstSequence \
+  , b32 => lastSequence \
+  '
 }
 
 var parser = exports.parser = packet.createParser();

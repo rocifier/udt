@@ -1,4 +1,4 @@
-var udt = require('./index');
+var udt = require('../udt');
 
 var socket = new udt.Socket;
 

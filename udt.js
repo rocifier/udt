@@ -1,9 +1,10 @@
 var dgram = require('dgram'),
     socket = dgram.createSocket('udp4'),
     packet = require('packet'),
-    common = require('./common'),
+    common = require('./packetdefs'),
     crypto = require('crypto'),
     dns = require('dns'),
+    Heap = require('./heap'),
     __slice = [].slice;
 
 const CONTROL_TYPES = 'handshake keep-alive acknowledgement'.split(/\s+/);
@@ -25,96 +26,6 @@ var net = require('net');
 
 // The start of time used in our high resolution timings.
 var epoch = process.hrtime();
-
-var heapIndexKeyCounter = 0;
-
-function Heap (before) {
-  this.array = [];
-  this.indexKey = '_Heap_index_key_' + (heapIndexKeyCounter++);
-  this.before = before;
-}
-
-Heap.prototype.__defineGetter__("length", function () {
-  return this.array.length;
-});
-
-Heap.prototype.peek = function () {
-  return this.array[0];
-}
-
-Heap.prototype.bubbleUp = function (index) {
-  var before = this.before, array = this.array, indexKey = this.indexKey, node = array[index]; 
-  while (index > 0) {
-    var parent = index - 1 >> 1;
-    if (before(node, array[parent])) {
-      array[index] = array[parent];
-      array[parent] = node;
-      array[index][indexKey] = index;
-      array[parent][indexKey] = parent;
-      index = parent;
-    } else {
-      break;
-    }
-  }
-}
-
-Heap.prototype.sinkDown = function (index) {
-  var array = this.array, indexKey = this.indexKey,
-      length = array.length, node = array[index],
-      left, right, child;
-  for (left = index * 2 + 1; left < length; l = index * 2 + 1) {
-    child = left;
-    right = left + 1;
-    if (right < length && before(array[right], array[left])) {
-      child = right;
-    }
-    if (before(array[child][indexKey], node[indexKey])) {
-      array[index] = array[child];
-      array[child] = node;
-      array[index][indexKey] = index;
-      array[child][indexKey] = child;
-      index = child;
-    } else {
-      break;
-    }
-  }
-}
-
-Heap.prototype.remove = function (node) {
-  var array = this.array, indexKey = this.indexKey, last = array.pop(), index = node[indexKey];
-  if (index != array.length) {
-    array[index] = last;
-    if (less(end, node)) {
-      this.bubbleUp(index);
-    } else {
-      this.sinkDown(index);
-    }
-  }
-  delete node[indexKey];
-}
-
-Heap.prototype.push = function (node, value) {
-  var array = this.array, indexKey = this.indexKey, index = array.length;
-  if (node[indexKey] != null) {
-    this.remove(node);
-    this.push(node);
-  } else {
-    array.push(node);
-    node[indexKey] = index;
-    this.bubbleUp(index);
-  }
-}
-
-Heap.prototype.pop = function (node) {
-  var array = this.array, indexKey = this.indexKey, result = array[0], last = array.pop();
-  if (array.length) {
-    array[0] = last;
-    last[indexKey] = 0; 
-    this.sinkDown(0);
-  }
-  delete result[indexKey];
-  return result;
-}
 
 // Comparison operator generator for high-resolution time for use with heap.
 function sooner (property) {

@@ -6,7 +6,7 @@ var dgram = require('dgram')
 
 const MAX_MSG_NO = 0x1FFFFFFF;
 
-var Socket = require('./index').Socket;
+var Socket = require('../udt').Socket;
 
 function die () {
   console.log.apply(console, __slice.call(arguments, 0));
@@ -19,6 +19,9 @@ function extend (to, from) {
   for (var key in from) to[key] = from[key];
   return to;
 }
+
+var role = process.argv[2] ? 'client' : 'server';
+socket.bind(role == 'client' ? 9001 : 9000);
 
 function formatQuad (address) {
   var quad = [];
@@ -37,11 +40,6 @@ function parseQuad (quad) {
   }
   return 0;
 }
-
-var socket = new Socket;
-
-socket.connect(9293, function () {
-});
 
 var parser = new packet.createParser(), serializer = packet.createSerializer();
 

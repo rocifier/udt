@@ -1,16 +1,16 @@
-{ "name": "udt"
-, "description": "A pure JavaScript implementation of UDP-based Data Transfer Protocol."
-, "author": "Alan Gutierrez"
-, "version": "0.0.0"
-, "keywords": [ "udp", "udt", "p2p", "peer-to-peer", "firewall", "async", "asynchronous" ]
+{ "name": "es6udt"
+, "description": "Full ES6 implementation of the UDP-based Data Transfer Protocol named UDT"
+, "author": "Ryan O'Connor"
+, "version": "1.0.0"
+, "keywords": [ "udp", "udt", "p2p", "networking", "sockets", "firewall", "async", "asynchronous" ]
 , "licenses": [
   { "type": "MIT"
-  , "url": "http://github.com/bigeasy/udt/raw/master/LICENSE"
+  , "url": "http://github.com/rocifier/udt/raw/master/LICENSE"
   }]
-, "homepage": "https://github.com/bigeasy/udt"
+, "homepage": "https://github.com/rocifier/udt"
 , "repository":
   { "type": "git"
-  , "url": "http://github.com/bigeasy/udt.git"
+  , "url": "http://github.com/rocifier/udt.git"
   }
 , "scripts" : { "test": "(proof run t/*/*.t.js | tee .proof.out | proof progress) || (proof errors < .proof.out)" }
 , "devDependencies":

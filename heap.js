@@ -1,58 +1,91 @@
-// Taken from: https://gist.github.com/3088684
+var heapIndexKeyCounter = 0;
 
-// Heap Queue for JavaScript: smallest as head
-var Heap = function (less) {
-    less = less || function (a, b) {return a < b};
-    return Object.create(Heap.prototype, {
-        buf: {value: []},
-        less: {value: less},
-    });
-};
-Heap.prototype.push = function (elem) {
-    this.buf.push(elem);
-    var index = this.buf.length - 1;
-    while (index > 0) {
-        var parent = (index - 1) >> 1;
-        if (this.less(this.buf[index], this.buf[parent])) {
-            this.buf[index] = this.buf[parent];
-            this.buf[parent] = elem;
-            index = parent;
-        } else break;
+module.exports = class Heap {
+    constructor(before) {
+      this.array = [];
+      this.indexKey = '_Heap_index_key_' + (heapIndexKeyCounter++);
+      this.before = before;
     }
-};
-Heap.prototype.pop = function () {
-    var ret = this.buf[0];
-    var elem = this.buf.pop();
-    if (this.buf.length === 0) return ret;
-    this.buf[0] = elem;
-    var index = 0;
-    for (var l = index * 2 + 1; l < this.buf.length; l = index * 2 + 1) {
-        var child = l;
-        var r = l + 1;
-        if (r < this.buf.length && this.less(this.buf[r], this.buf[l])) {
-            child = r;
+
+    get length() {
+      return this.array.length;
+    }
+
+    peek() {
+      return this.array[0];
+    }
+
+    bubbleUp(index) {
+      var before = this.before, array = this.array, indexKey = this.indexKey, node = array[index]; 
+      while (index > 0) {
+        var parent = index - 1 >> 1;
+        if (before(node, array[parent])) {
+          array[index] = array[parent];
+          array[parent] = node;
+          array[index][indexKey] = index;
+          array[parent][indexKey] = parent;
+          index = parent;
+        } else {
+          break;
         }
-        if (this.less(this.buf[child], elem)) {
-            this.buf[index] = this.buf[child];
-            this.buf[child] = elem;
-            index = child;
-        } else break;
+      }
     }
-    return ret;
-};
-Heap.prototype.empty = function () {
-    return this.buf.length === 0;
+
+    sinkDown(index) {
+      var array = this.array, indexKey = this.indexKey,
+          length = array.length, node = array[index],
+          left, right, child;
+      for (left = index * 2 + 1; left < length; l = index * 2 + 1) {
+        child = left;
+        right = left + 1;
+        if (right < length && before(array[right], array[left])) {
+          child = right;
+        }
+        if (before(array[child][indexKey], node[indexKey])) {
+          array[index] = array[child];
+          array[child] = node;
+          array[index][indexKey] = index;
+          array[child][indexKey] = child;
+          index = child;
+        } else {
+          break;
+        }
+      }
+    }
+
+    remove(node) {
+      var array = this.array, indexKey = this.indexKey, last = array.pop(), index = node[indexKey];
+      if (index != array.length) {
+        array[index] = last;
+        if (less(end, node)) {
+          this.bubbleUp(index);
+        } else {
+          this.sinkDown(index);
+        }
+      }
+      delete node[indexKey];
+    }
+
+    push(node, value) {
+      var array = this.array, indexKey = this.indexKey, index = array.length;
+      if (node[indexKey] != null) {
+        this.remove(node);
+        this.push(node);
+      } else {
+        array.push(node);
+        node[indexKey] = index;
+        this.bubbleUp(index);
+      }
+    }
+
+    pop(node) {
+      var array = this.array, indexKey = this.indexKey, result = array[0], last = array.pop();
+      if (array.length) {
+        array[0] = last;
+        last[indexKey] = 0; 
+        this.sinkDown(0);
+      }
+      delete result[indexKey];
+      return result;
+    }
 }
-
-//example
-/*
-var data = [5,3,2,10,1,55,10,0,4];
-var h = Heap();
-data.forEach(h.push.bind(h));
-var sorted = [];
-while (!h.empty()) sorted.push(h.pop());
-console.log(data);
-console.log(sorted);
-*/
-
-exports.Heap = Heap;
