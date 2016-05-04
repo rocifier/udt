@@ -1,13 +1,8 @@
 var __slice = [].slice;
 
 module.exports = class Helpers {
-    static validator(ee) {
-        return function (forward) {
-            return check(ee, forward)
-        }
-    }
 
-    static check(ee, forward) {
+    static _check(ee, forward) {
         return function (error) {
             if (error) {
                 process.nextTick(function () {
@@ -20,7 +15,13 @@ module.exports = class Helpers {
                 } catch (error) {
                     ee.emit('error', error);
                 }
-            }
+            } 
+        }
+    }
+    
+    static validator(ee) {
+        return function (forward) {
+            return Helpers._check(ee, forward);
         }
     }
 
@@ -45,4 +46,14 @@ module.exports = class Helpers {
         }
         return address;
     }
+
+    // Comparison operator generator for high-resolution time for use with heap.
+    static sooner(property) {
+        return function (a, b) {
+            if (a[property][0] < b[property][0]) return true;
+            if (a[property][0] > b[property][0]) return false;
+            return a[property][1] < b[property][1];
+        }
+    }
+
 }

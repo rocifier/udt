@@ -1,22 +1,88 @@
-var dgram = require('dgram')
+const dgram = require('dgram')
     , packet = require('packet')
+    , crypto = require('crypto')
+    , Helpers = require('./helpers')
+    , events = require('events')
+    , Socket = require('./socket')
     , common = require('./packetdefs');
 
 const CONTROL_TYPES = 'handshake keep-alive acknowledgement'.split(/\s+/);
 
-// Builds upon a UDP datagram socket by providing additional functionality such as
-// handshaking, persistent connections, reliability, sequencing, flow control, and congestion compensation.
-module.exports = class EndPoint {
 
-    // local: object containing address and port
-    constructor(local) {
+// Reference counted cache of UDP datagram sockets.
+var endPoints = {};
+
+/*
+// Create a new UDT socket from the user specified port and IPV4 address.
+function createEndPoint(local, onCreated) {
+
+    // Use an existing datagram socket if one exists.
+    var endPoint = lookupEndPoint(local);
+    if (endPoint) {
+        onCreated(endPoint);
+        return;
+    }
+
+    var endPoint = new EndPoint(local, function (socketResult) {
+        if (!endPoints[socketResult.port]) endPoints[socketResult.port] = {};
+        endPoints[socketResult.port][socketResult.address] = endPoint;
+        onCreated(endPoint);
+    });
+}
+
+// Look up an UDP datagram socket in the cache of bound UDP datagram sockets by
+// the user specified port and address.
+function lookupEndPoint(local) {
+    // No interfaces bound by the desired port. Note that this would also work for
+    // zero, which indicates an ephemeral binding, but we check for that case
+    // explicitly before calling this function.
+    if (!endPoints[local.port]) return null;
+
+    // Read datagram socket from cache.
+    var endPoint = endPoints[local.port][local.address];
+
+    // If no datagram exists, ensure that we'll be able to create one. This only
+    // inspects ports that have been bound by UDT, not by other protocols, so
+    // there is still an opportunity for error when the UDP bind is invoked.
+    if (!endPoint) {
+        if (endPoints[local.port][0]) {
+            throw new Error('Already bound to all interfaces.');
+        }
+        if (local.address == 0) {
+            throw new Error('Cannot bind to all interfaces because some interfaces are already bound.');
+        }
+    }
+
+    // Return cached datagram socket or nothing.
+    return endPoint;
+}
+*/
+
+// An endpoint is one end of a two-way socket; it controls the socket from that end.
+// This class uses a UDP datagram socket and provides additional functionality such as
+// handshaking, persistent connections, reliability, sequencing, flow control, and congestion compensation.
+module.exports = class EndPoint extends events.EventEmitter {
+
+    // address: object containing address and port
+    constructor(address, onBind, onError) {
+        super();
+        var endpoint = this;
         this.listeners = 0;
-        this.dgram = dgram.createSocket('udp4');
-        this.dgram.on('message', EndPoint.prototype.receive.bind(this));
-        this.dgram.bind(local.port, local.address);
-        this.local = this.dgram.address();
         this.packet = new Buffer(2048);
         this.sockets = {};
+        this.dgram = dgram.createSocket('udp4');
+        this.dgram.on('message', EndPoint.prototype.receive.bind(this));
+        this.dgram.on('error', onError);
+        // TODO: pool and reuse endpoints as in bigeasy/udt
+        // But is that necessary?
+        if (!endPoints[address.port]) endPoints[address.port] = {};
+        endPoints[address.port][address.address] = endpoint;
+        this.dgram.bind(address.port, address.address, () => {
+            endpoint.address = endpoint.dgram.address();
+            process.nextTick(() => {
+                onBind(endpoint.address);
+            });
+        });
     }
 
     shakeHands(socket) {
@@ -41,7 +107,7 @@ module.exports = class EndPoint {
             , connectionType: 1
             , socketId: socket._socketId
             , synCookie: 0
-            , address: parseDotDecimal(socket._peer.address)
+            , address: Helpers.parseDotDecimal(socket._peer.address)
         });
     }
 
@@ -97,15 +163,15 @@ module.exports = class EndPoint {
 
         function finalize() {
             // If we were a bound listening socket, see if we ought to close.
-            if (socket._listener && !--endPoint.listeners && endPoint.server._closing) {
+            //if (socket._listener && !--endPoint.listeners && endPoint.server._closing) {
                 // This will unassign `endPoint.server`.
-                endPoint.server.close();
-            }
+            //    endPoint.server.close();
+            //}
             // Dispose of the end point and UDP socket if it is no longer referenced.
             if (Object.keys(endPoint.sockets).length == 0) {
-                delete endPoints[endPoint.local.port][endPoint.local.address];
-                if (Object.keys(endPoints[endPoint.local.port]).length == 0) {
-                    delete endPoints[endPoint.local.port];
+                delete endPoints[endPoint.address.port][endPoint.address.address];
+                if (Object.keys(endPoints[endPoint.address.port]).length == 0) {
+                    delete endPoints[endPoint.address.port];
                 }
                 dgram.close();
             }
@@ -119,7 +185,7 @@ module.exports = class EndPoint {
             , count = 0
             , peer = socket._peer;
         socket._handshakeInterval = setInterval(function () {
-            if (++count == 12) {
+            if (++count == 16) {
                 clearInterval(socket._handshakeInterval);
                 socket.emit('error', new Error('connection timeout'));
             } else {
@@ -137,6 +203,7 @@ module.exports = class EndPoint {
         serializer.serialize(packetType, object);
         serializer.write(packet);
 
+        //console.log("Sending packet " + packetType + " to " + peer.address + ":" + peer.port);
         dgram.send(packet, 0, serializer.length, peer.port, peer.address);
     }
 
@@ -166,11 +233,12 @@ module.exports = class EndPoint {
                         // Everything else
                     default:
                         var name = CONTROL_TYPES[header.type];
-                        console.log(name, header);
+                        //console.log(name, header);
                         parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header))
                     }
-                    // Hmm... Do you explicitly enable rendezvous?
-                } else if (header.type == 0 && endPoint.server) {
+                    // Todo: Make only the server socket accept handshakes.
+                    // Todo: Rendezvous mode.
+                } else if (header.type == 0) {
                     parser.extract('handshake', endPoint.connect.bind(endPoint, rinfo, header))
                 }
             } else {}
@@ -189,7 +257,7 @@ module.exports = class EndPoint {
             socket._status = 'syn-ack';
 
             // Unify the packet object for serialization.
-            handshake = extend(handshake, header);
+            handshake = Helpers.extend(handshake, header);
 
             // Set the destination to nothing.
             handshake.destination = 0;
@@ -255,14 +323,13 @@ module.exports = class EndPoint {
     }
 
     connect(rinfo, header, handshake) {
-        var endPoint = this
-            , server = endPoint.server
-            , timestamp = Math.floor(Date.now() / 6e4);
+        var endPoint = this;
+        var timestamp = Math.floor(Date.now() / 6e4);
 
         // Do not accept new connections if the server is closing.
-        if (server._closing) return;
+        //if (server._closing) return;
 
-        handshake = extend(handshake, header);
+        handshake = Helpers.extend(handshake, header);
 
         if (handshake.connectionType == 1) {
             handshake.destination = handshake.socketId;
@@ -270,7 +337,11 @@ module.exports = class EndPoint {
             endPoint.send('handshake', handshake, rinfo);
         } else if (handshakeWithValidCookie(handshake, timestamp)) {
             // Create the socket and initialize it as a listener.
-            var socket = new Socket;
+            // At this point we're on a server.
+            // Todo: this is fucked up, a socket shouldn't be made here
+            // and an endpoint made in socket!
+            // could I solve this by creating the socket on the server handling the connection event?
+            var socket = new Socket();
 
             socket._peer = rinfo;
             socket._endPoint = endPoint;
@@ -287,7 +358,7 @@ module.exports = class EndPoint {
 
             endPoint.send('handshake', handshake, rinfo);
 
-            endPoint.server.emit('connection', socket);
+            endPoint.emit('connection', socket);
         }
 
         function handshakeWithValidCookie(handshake, timestamp) {
@@ -328,7 +399,7 @@ module.exports = class EndPoint {
 
         if (message) {
             serializer.reset();
-            serializer.serialize('header', extend({
+            serializer.serialize('header', Helpers.extend({
                 control: 0
                 , timestamp: 0
             }, message));
@@ -380,4 +451,11 @@ function binarySearch(comparator, array, key) {
 // Compare two objects by their sequence property.
 function bySequence(left, right) {
     return left.sequence - right.sequence
+}
+
+const SYN_COOKIE_SALT = crypto.randomBytes(64).toString('binary');
+function synCookie(address, timestamp) {
+    var hash = crypto.createHash('sha1');
+    hash.update(SYN_COOKIE_SALT + ':' + address.host + ':' + address.port + ':' + timestamp);
+    return parseInt(hash.digest('hex').substring(0, 8), 16);
 }
