@@ -459,3 +459,56 @@ function synCookie(address, timestamp) {
     hash.update(SYN_COOKIE_SALT + ':' + address.host + ':' + address.port + ':' + timestamp);
     return parseInt(hash.digest('hex').substring(0, 8), 16);
 }
+
+var sendQueue = new(function () {
+    var before = Helpers.sooner('_sendTime')
+        , queue = new Heap(before)
+        , sending = false;
+
+    function enqueue(socket, packet, when) {
+        queue.add({
+            socket: socket
+            , packet: packet
+            , when: when
+        });
+        if (!sending) poll();
+    }
+
+    function schedule(socket, timestamp) {
+        // This gave me a funny feeling, one of violating encapsulation by using a
+        // property in the socket object from the send queue, except that am I
+        // supposed to do? This is what I would have called violating encapsulation
+        // in my Java days, it triggers the creation of a dozen new types to
+        // preserve encapsulation. I've yet to completely de-program myself of this
+        // sort of rote programming. The send queue is within the same capsule as
+        // the socket. They are interdependent. They existing for each other. The
+        // socket object's underscored properties are part of its implementation, in
+        // fact, the socket is not the implementation, the whole API is.
+        socket._sendTime = timestamp;
+        queue.push(socket);
+        if (!sending) poll();
+    }
+
+    function poll() {
+        sending = true;
+        if (!queue.length) {
+            sending = false;
+        } else {
+            send();
+        }
+    }
+
+    function send() {
+        var socket;
+        if (before(queue.peek(), {
+                _sendTime: process.hrtime()
+            })) {
+            socket = queue.pop();
+            socket._endPoint.transmit(socket);
+        }
+        process.nextTick(poll);
+    }
+    Helpers.extend(this, {
+        schedule: schedule
+    });
+})();
