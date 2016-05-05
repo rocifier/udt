@@ -1,8 +1,10 @@
 # UDT
 
-A pure JavaScript implementation of UDP-based Data Transfer Protocol called UDT.
+A pure JavaScript implementation of UDP-based Data Transfer Protocol called UDT for Node.JS.
 The UDT specifications can be found at http://udt.sourceforge.net/doc/draft-gg-udt-03.txt
 It has the special purpose of real-time action game servers in mind but could of course be used for anything!
+
+In the long term this project is planned to be the basis for network communication in a full-blown open source MMO Node.JS clustered server framework.
 
 # Why would I use Node.Js on my realtime game server?
 
@@ -12,7 +14,7 @@ The main reason is because it's quick and easy to code. The second reason is bec
 
 This part of your server will not be bound by *CPU* performance, it will be bound by *I/O*. Thus, it makes more sense to use a language like Node.JS which excels at providing I/O bound solutions (as it is many MMO servers are written in *Java*, which we all know is even slower). Besides, because node typically runs on a single core, that frees up cores for more complex CPU intensive tasks such as simulating physics in a real-time game.
 
-Native C++ will use a smaller memory footprint and be slightly faster overall than the V8 engine (which is very fast), but we believe the tradeoffs such as built-in garbage collection, no pointers, readily available developers internationally, and a single cross-platform code base is worth seriously considering this as a solution.
+Native C++ will use a smaller memory footprint and be slightly faster overall than the V8 engine (which is very fast), but we believe the tradeoffs such as built-in garbage collection, no pointers, proven scalability, readily available developers internationally, and a single cross-platform code base is worth seriously considering this as a solution especially when considering native code execution speed is not really required on an MMO server.
 
 # Status
 
@@ -40,6 +42,10 @@ for that connection which can be read or written to by your app. Your app must s
 Provides most of the UDT protocol implementation including handshaking and handling a full range of packet types.
 Does all the low-level decoding of packet headers. Interfaces with congestion control, automatically retransmits lost
 packets, and sends official shut down packets when it's shut down.
+
+### Packets
+
+UDT always tries to pack application data into fixed size packets (the maximum packet size negotiated during handshaking), unless there is not enough data to be sent.
 
 ## Socket
 

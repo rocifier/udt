@@ -30,8 +30,8 @@ describe('Server', function() {
                 });
             }, (err) => {});
             
-        })
+        });
         
-    })
+    });
     
 });

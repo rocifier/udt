@@ -234,12 +234,12 @@ module.exports = class EndPoint extends events.EventEmitter {
                     default:
                         var name = CONTROL_TYPES[header.type];
                         //console.log(name, header);
-                        parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header))
+                        parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header));
                     }
                     // Todo: Make only the server socket accept handshakes.
                     // Todo: Rendezvous mode.
                 } else if (header.type == 0) {
-                    parser.extract('handshake', endPoint.connect.bind(endPoint, rinfo, header))
+                    parser.extract('handshake', endPoint.connect.bind(endPoint, rinfo, header));
                 }
             } else {}
         });
@@ -429,7 +429,7 @@ module.exports = class EndPoint extends events.EventEmitter {
         }
     }
 
-}
+};
 
 
 // Binary search, implemented, as always, by taking a [peek at
@@ -450,7 +450,7 @@ function binarySearch(comparator, array, key) {
 
 // Compare two objects by their sequence property.
 function bySequence(left, right) {
-    return left.sequence - right.sequence
+    return left.sequence - right.sequence;
 }
 
 const SYN_COOKIE_SALT = crypto.randomBytes(64).toString('binary');

@@ -101,4 +101,4 @@ module.exports = class Heap {
         delete result[indexKey];
         return result;
     }
-}
+};

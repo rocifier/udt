@@ -41,7 +41,7 @@ var packets = exports.packets =
     b32 => firstSequence \
   , b32 => lastSequence \
   '
-}
+};
 
 var parser = exports.parser = packet.createParser();
 var serializer = exports.serializer = packet.createSerializer();

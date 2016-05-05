@@ -144,4 +144,4 @@ module.exports = class Socket extends Stream {
     _destroy() {
         this._endPoint.shutdown(this);
     }
-}
+};

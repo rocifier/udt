@@ -21,7 +21,7 @@ module.exports = class Server extends events.EventEmitter {
         server.once('listening', onListening);
         server._endPoint = new EndPoint(address, (boundaddress) => {
             server.address = boundaddress;
-            process.nextTick(() => { server.emit('listening') });
+            process.nextTick(() => { server.emit('listening'); });
             // pass on up endpoint events
             server._endPoint.on('connection', (socket) => {
                 server.emit('connection', socket);
@@ -43,4 +43,4 @@ module.exports = class Server extends events.EventEmitter {
         return this._endPoint.address();
     }
 
-}
+};

@@ -16,13 +16,13 @@ module.exports = class Helpers {
                     ee.emit('error', error);
                 }
             } 
-        }
+        };
     }
     
     static validator(ee) {
         return function (forward) {
             return Helpers._check(ee, forward);
-        }
+        };
     }
 
     static die() {
@@ -31,7 +31,7 @@ module.exports = class Helpers {
     }
 
     static say() {
-        return console.log.apply(console, __slice.call(arguments, 0))
+        return console.log.apply(console, __slice.call(arguments, 0));
     }
 
     static extend(to, from) {
@@ -53,7 +53,7 @@ module.exports = class Helpers {
             if (a[property][0] < b[property][0]) return true;
             if (a[property][0] > b[property][0]) return false;
             return a[property][1] < b[property][1];
-        }
+        };
     }
 
-}
+};
