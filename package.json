@@ -32,12 +32,15 @@
         }
     },
     "rules": {
-        "semi": 2
+        "semi": 2,
+        "no-console": 0
     },
     "env": {
         "browser": true,
         "node": true,
-        "es6": true
-    }
+        "es6": true,
+        "mocha": true
+    },
+    "extends": "eslint:recommended"
  }
 }

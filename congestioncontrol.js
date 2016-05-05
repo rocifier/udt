@@ -11,4 +11,4 @@ module.exports = class CongestionControl extends events.EventEmitter {
         this.windowSize = 16;
     }
 
-}
+};

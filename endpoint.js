@@ -1,12 +1,14 @@
 const dgram = require('dgram')
-    , packet = require('packet')
     , crypto = require('crypto')
     , Helpers = require('./helpers')
     , events = require('events')
     , Socket = require('./socket')
+    , Heap = require('./heap')
+    , sendQueue = require('./sendqueue')
     , common = require('./packetdefs');
 
 const CONTROL_TYPES = 'handshake keep-alive acknowledgement'.split(/\s+/);
+const MAX_SEQ_NO = Math.pow(2, 31) - 1; // Todo: duplicate constant from socket.js
 
 
 // Reference counted cache of UDP datagram sockets.
@@ -182,8 +184,7 @@ module.exports = class EndPoint extends events.EventEmitter {
     // seconds is up.
     sendHandshake(socket, handshake) {
         var endPoint = this
-            , count = 0
-            , peer = socket._peer;
+            , count = 0;
         socket._handshakeInterval = setInterval(function () {
             if (++count == 16) {
                 clearInterval(socket._handshakeInterval);
@@ -209,8 +210,7 @@ module.exports = class EndPoint extends events.EventEmitter {
 
     receive(msg, rinfo) {
         var endPoint = this
-            , parser = common.parser
-            , handler;
+            , parser = common.parser;
         parser.reset();
         parser.extract('header', function (header) {
             header.rinfo = rinfo;
@@ -241,7 +241,7 @@ module.exports = class EndPoint extends events.EventEmitter {
                 } else if (header.type == 0) {
                     parser.extract('handshake', endPoint.connect.bind(endPoint, rinfo, header));
                 }
-            } else {}
+            }// else {}
         });
         parser.parse(msg);
     }
@@ -293,12 +293,12 @@ module.exports = class EndPoint extends events.EventEmitter {
         } else {
             this.lightAcknowledgement(socket, header, ack);
         }
-    };
+    }
 
     // Remove the sent packets that have been received.
     fullAcknowledgement(socket, header, ack, stats) {
         this.lightAcknowledgement(socket, header, ack);
-        say(socket._flowWindowSize, socket._sent[0].length, header, ack, stats);
+        Helpers.say(socket._flowWindowSize, socket._sent[0].length, header, ack, stats);
     }
 
     lightAcknowledgement(socket, header, ack) {
@@ -374,27 +374,25 @@ module.exports = class EndPoint extends events.EventEmitter {
             , dgram = this.dgram
             , pending = socket._pending
             , peer = socket._peer
-            , enqueue;
+            , enqueue = false;
 
         // If we have data packets to retransmit, they go first, otherwise send a new
         // data packet.
-        if (false) {
+        if (pending.length && !pending[0].length) {
+            pending.shift();
+        }
 
-        } else {
-            if (pending.length && !pending[0].length) {
-                pending.shift();
-            }
+        var message = null;
+        
+        if (pending.length) {
+            // TODO: Is pop faster?
+            message = pending[0].shift();
 
-            if (pending.length) {
-                // TODO: Is pop faster?
-                message = pending[0].shift();
+            // Set the sequence number.
+            message.sequence = socket._sequence;
 
-                // Set the sequence number.
-                message.sequence = socket._sequence;
-
-                // We will stash the message and increment the seqeunce number.
-                enqueue = true;
-            }
+            // We will stash the message and increment the seqeunce number.
+            enqueue = true;
         }
 
         if (message) {
@@ -459,56 +457,3 @@ function synCookie(address, timestamp) {
     hash.update(SYN_COOKIE_SALT + ':' + address.host + ':' + address.port + ':' + timestamp);
     return parseInt(hash.digest('hex').substring(0, 8), 16);
 }
-
-var sendQueue = new(function () {
-    var before = Helpers.sooner('_sendTime')
-        , queue = new Heap(before)
-        , sending = false;
-
-    function enqueue(socket, packet, when) {
-        queue.add({
-            socket: socket
-            , packet: packet
-            , when: when
-        });
-        if (!sending) poll();
-    }
-
-    function schedule(socket, timestamp) {
-        // This gave me a funny feeling, one of violating encapsulation by using a
-        // property in the socket object from the send queue, except that am I
-        // supposed to do? This is what I would have called violating encapsulation
-        // in my Java days, it triggers the creation of a dozen new types to
-        // preserve encapsulation. I've yet to completely de-program myself of this
-        // sort of rote programming. The send queue is within the same capsule as
-        // the socket. They are interdependent. They existing for each other. The
-        // socket object's underscored properties are part of its implementation, in
-        // fact, the socket is not the implementation, the whole API is.
-        socket._sendTime = timestamp;
-        queue.push(socket);
-        if (!sending) poll();
-    }
-
-    function poll() {
-        sending = true;
-        if (!queue.length) {
-            sending = false;
-        } else {
-            send();
-        }
-    }
-
-    function send() {
-        var socket;
-        if (before(queue.peek(), {
-                _sendTime: process.hrtime()
-            })) {
-            socket = queue.pop();
-            socket._endPoint.transmit(socket);
-        }
-        process.nextTick(poll);
-    }
-    Helpers.extend(this, {
-        schedule: schedule
-    });
-})();

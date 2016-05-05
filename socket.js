@@ -1,8 +1,7 @@
 const Stream = require('stream')
-    , net = require('net')
-    , dns = require('dns')
     , crypto = require('crypto')
     , Helpers = require('./helpers')
+    , sendQueue = require('./sendqueue')
     , CongestionControl = require('./congestioncontrol');
 
 // Total size of UDT data packet overhead, UDP header plus UDT data header.
@@ -107,7 +106,7 @@ module.exports = class Socket extends Stream {
         var socket = this
             , handshake = socket._handshake
             , size = handshake.maxPacketSize - (UDT_DATA_HEADER_SIZE + UDT_DATA_HEADER_SIZE)
-            , packet, count, i, length, message = [];
+            , packet, count, i, message = [];
 
         count = Math.floor(buffer.length / size);
         if (buffer.length % size) count++;

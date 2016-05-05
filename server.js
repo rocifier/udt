@@ -1,6 +1,4 @@
 const EndPoint = require('./endpoint')
-    , Heap = require('./heap')
-    , Helpers = require('./helpers')
     , events = require('events');
 
 // Events emitted by Server:
@@ -35,7 +33,7 @@ module.exports = class Server extends events.EventEmitter {
         if (callback) this.once('close', callback);
         this._closing = true;
         if (this._endPoint.listeners == 0) {
-            server.emit('close'); // We can close immediately
+            this.emit('close'); // We can close immediately
         }
     }
     

@@ -12,4 +12,4 @@ var server = new udt.createServer(function (socket) {
   shutdown();
 });
 
-server.listen(9000, '127.0.0.1', function () { console.log('listening') });
+server.listen(9000, '127.0.0.1', function () { console.log('listening'); });

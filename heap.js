@@ -40,7 +40,7 @@ module.exports = class Heap {
             , length = array.length
             , node = array[index]
             , left, right, child;
-        for (left = index * 2 + 1; left < length; l = index * 2 + 1) {
+        for (left = index * 2 + 1; left < length; left = index * 2 + 1) {
             child = left;
             right = left + 1;
             if (right < length && before(array[right], array[left])) {
