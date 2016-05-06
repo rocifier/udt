@@ -2,18 +2,20 @@ var Heap = require('./heap')
     , Helpers = require('./helpers');
 
 // Send queue for sockets
+var before = Helpers.sooner('_sendTime')
+    , queue = new Heap(before)
+    , sending = false;
 class SendQueue {
-    var before = Helpers.sooner('_sendTime')
-        , queue = new Heap(before)
-        , sending = false;
 
-    function schedule(socket, timestamp) {
+    constructor() {}
+
+    schedule(socket, timestamp) {
         socket._sendTime = timestamp; // Todo: use getter method
         queue.push(socket);
         if (!sending) poll();
     }
 
-    function poll() {
+    poll() {
         sending = true;
         if (!queue.length) {
             sending = false;
@@ -22,7 +24,7 @@ class SendQueue {
         }
     }
 
-    function send() {
+    send() {
         var socket;
         if (before(queue.peek(), {
                 _sendTime: process.hrtime()
@@ -32,9 +34,7 @@ class SendQueue {
         }
         process.nextTick(poll);
     }
-    Helpers.extend(this, {
-        schedule: schedule
-    });
+    
 };
 
 // singleton

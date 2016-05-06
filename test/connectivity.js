@@ -3,6 +3,7 @@ var Server = require('../server');
 var server = new Server();
 var EndPoint = require('../endpoint');
 var Socket = require('../socket');
+var udt = require('../udt');
 
 describe('Server', function () {
 
@@ -19,32 +20,58 @@ describe('Server', function () {
             }
             , function () {
                 console.log("(Server: Listening on " + server.address.address + ":" + server.address.port + ")");
-                var socket = new Socket();
-
-                // Set up this end of the socket
-                // Kinda sucks having to create and endpoint and a socket - the endpoint should be internal.
-                // But for now I've done it to stop cyclic requires and keep everything modular.
-                // Open to suggestions for how to improve this - perhaps create a client class to wrap it?
-                var endPoint = new EndPoint({
-                    port: 4001
-                    , address: '127.0.0.1'
-                }, () => {
-                    socket.connect({
-                        port: 4000
-                        , address: '127.0.0.1'
-                    }, endPoint);
-                    socket.on('connect', function () {
-                        console.log('(Client: connected)');
-                        done();
-                        endPoint.shutdown(socket, false);
-                    });
-                }, () => {});
-
+                var socket = udt.createConnection(4000, '127.0.0.1', function () {
+                    console.log('(Client: connected)');
+                    done();
+                    socket._endPoint.shutdown(socket, false);
+                });
             });
     });
 
-    it('should receive data without corruption', function () {
+    it('should timeout correctly', function (done) {
+
+        // from https://github.com/nodejs/node/blob/master/test/internet/test-net-connect-timeout.js
+        var start = new Date();
+        var gotTimeout = false;
+        var gotConnect = false;
+        var T_err = 100;
+        var T = 250;
+
+        // 192.0.2.1 is part of subnet assigned as "TEST-NET" in RFC 5737.
+        // For use solely in documentation and example source code.
+        // In short, it should be unreachable.
+        // In practice, it's a network black hole.
+        var socket = udt.createConnection(9999, '192.0.2.1', () => {
+            assert(false);
+            console.error('connect');
+            socket.destroy();
+            done();
+        });
+
+        var rejectsLowTimeout = false;
+        try {
+            socket.setTimeout(T_err);
+        } catch(error) {
+            rejectsLowTimeout = true;
+            console.log('\t(Client: low timeout correctly rejected)');
+        }
+        assert(rejectsLowTimeout);
         
+        socket.setTimeout(T);
+        socket.on('timeout', function () {
+            console.log('(Client: timed out as expected)');
+            gotTimeout = true;
+            var now = new Date();
+            assert.ok(now - start < T + 500);
+            socket.destroy();
+            done();
+        });
+
+        socket.on('error', function () {
+            console.log('error');
+            done();
+        });
+
     });
 
 });

@@ -1,4 +1,4 @@
-const EndPoint = require('./endpoint')
+const endpoint = require('./endpoint')
     , events = require('events');
 
 // Events emitted by Server:
@@ -17,15 +17,14 @@ module.exports = class Server extends events.EventEmitter {
         var server = this;
         server.on('connection', onConnect);
         server.once('listening', onListening);
-        server._endPoint = new EndPoint(address, (boundaddress) => {
-            server.address = boundaddress;
+        endpoint.createEndPoint(address, (endPoint) => {
+            server._endPoint = endPoint;
+            server.address = endPoint.address;
             process.nextTick(() => { server.emit('listening'); });
             // pass on up endpoint events
             server._endPoint.on('connection', (socket) => {
                 server.emit('connection', socket);
             });
-        }, (error) => {
-            throw error;
         });
     }
 

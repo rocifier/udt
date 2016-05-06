@@ -14,56 +14,11 @@ const MAX_SEQ_NO = Math.pow(2, 31) - 1; // Todo: duplicate constant from socket.
 // Reference counted cache of UDP datagram sockets.
 var endPoints = {};
 
-/*
-// Create a new UDT socket from the user specified port and IPV4 address.
-function createEndPoint(local, onCreated) {
-
-    // Use an existing datagram socket if one exists.
-    var endPoint = lookupEndPoint(local);
-    if (endPoint) {
-        onCreated(endPoint);
-        return;
-    }
-
-    var endPoint = new EndPoint(local, function (socketResult) {
-        if (!endPoints[socketResult.port]) endPoints[socketResult.port] = {};
-        endPoints[socketResult.port][socketResult.address] = endPoint;
-        onCreated(endPoint);
-    });
-}
-
-// Look up an UDP datagram socket in the cache of bound UDP datagram sockets by
-// the user specified port and address.
-function lookupEndPoint(local) {
-    // No interfaces bound by the desired port. Note that this would also work for
-    // zero, which indicates an ephemeral binding, but we check for that case
-    // explicitly before calling this function.
-    if (!endPoints[local.port]) return null;
-
-    // Read datagram socket from cache.
-    var endPoint = endPoints[local.port][local.address];
-
-    // If no datagram exists, ensure that we'll be able to create one. This only
-    // inspects ports that have been bound by UDT, not by other protocols, so
-    // there is still an opportunity for error when the UDP bind is invoked.
-    if (!endPoint) {
-        if (endPoints[local.port][0]) {
-            throw new Error('Already bound to all interfaces.');
-        }
-        if (local.address == 0) {
-            throw new Error('Cannot bind to all interfaces because some interfaces are already bound.');
-        }
-    }
-
-    // Return cached datagram socket or nothing.
-    return endPoint;
-}
-*/
-
 // An endpoint is one end of a two-way socket; it controls the socket from that end.
 // This class uses a UDP datagram socket and provides additional functionality such as
 // handshaking, persistent connections, reliability, sequencing, flow control, and congestion compensation.
-module.exports = class EndPoint extends events.EventEmitter {
+// Don't instance this class directly, instead use createEndPoint(...).
+exports.EndPoint = class EndPoint extends events.EventEmitter {
 
     // address: object containing address and port
     constructor(address, onBind, onError) {
@@ -75,10 +30,6 @@ module.exports = class EndPoint extends events.EventEmitter {
         this.dgram = dgram.createSocket('udp4');
         this.dgram.on('message', EndPoint.prototype.receive.bind(this));
         this.dgram.on('error', onError);
-        // TODO: pool and reuse endpoints as in bigeasy/udt
-        // But is that necessary?
-        if (!endPoints[address.port]) endPoints[address.port] = {};
-        endPoints[address.port][address.address] = endpoint;
         this.dgram.bind(address.port, address.address, () => {
             endpoint.address = endpoint.dgram.address();
             process.nextTick(() => {
@@ -166,7 +117,7 @@ module.exports = class EndPoint extends events.EventEmitter {
         function finalize() {
             // If we were a bound listening socket, see if we ought to close.
             //if (socket._listener && !--endPoint.listeners && endPoint.server._closing) {
-                // This will unassign `endPoint.server`.
+            // This will unassign `endPoint.server`.
             //    endPoint.server.close();
             //}
             // Dispose of the end point and UDP socket if it is no longer referenced.
@@ -180,19 +131,20 @@ module.exports = class EndPoint extends events.EventEmitter {
         }
     }
 
-    // Send the handshake twice a second until we get a response, or until 8
-    // seconds is up.
+    // Send the handshake 4 times a second until we get a response, or until roughly x
+    // milliseconds is up (default 12000).
     sendHandshake(socket, handshake) {
         var endPoint = this
-            , count = 0;
+            , count = 0
+            , freq = 250;
         socket._handshakeInterval = setInterval(function () {
-            if (++count == 16) {
+            if (++count == socket.getTimeout() / freq) {
                 clearInterval(socket._handshakeInterval);
-                socket.emit('error', new Error('connection timeout'));
+                socket.emit('timeout', new Error('connection timeout'));
             } else {
                 endPoint.send('handshake', handshake, socket._peer);
             }
-        }, 500);
+        }, freq);
     }
 
     send(packetType, object, peer) {
@@ -241,7 +193,7 @@ module.exports = class EndPoint extends events.EventEmitter {
                 } else if (header.type == 0) {
                     parser.extract('handshake', endPoint.connect.bind(endPoint, rinfo, header));
                 }
-            }// else {}
+            } // else {}
         });
         parser.parse(msg);
     }
@@ -383,7 +335,7 @@ module.exports = class EndPoint extends events.EventEmitter {
         }
 
         var message = null;
-        
+
         if (pending.length) {
             // TODO: Is pop faster?
             message = pending[0].shift();
@@ -429,6 +381,53 @@ module.exports = class EndPoint extends events.EventEmitter {
 
 };
 
+// Look up an UDP datagram socket in the cache of bound UDP datagram sockets by
+// the user specified port and address.
+exports.lookupEndPoint = function lookupEndPoint(local) {
+    // No interfaces bound by the desired port. Note that this would also work for
+    // zero, which indicates an ephemeral binding, but we check for that case
+    // explicitly before calling this function.
+    if (!endPoints[local.port]) return null;
+
+    // Read datagram socket from cache.
+    var endPoint = endPoints[local.port][local.address];
+
+    // If no datagram exists, ensure that we'll be able to create one. This only
+    // inspects ports that have been bound by UDT, not by other protocols, so
+    // there is still an opportunity for error when the UDP bind is invoked.
+    if (!endPoint) {
+        if (endPoints[local.port][0]) {
+            throw new Error('Already bound to all interfaces.');
+        }
+        if (local.address == 0) {
+            throw new Error('Cannot bind to all interfaces because some interfaces are already bound.');
+        }
+    }
+
+    // Return cached datagram socket or nothing.
+    return endPoint;
+}
+
+// Create a new UDT socket from the user specified port and IPV4 address.
+// This function MUST be used to create endpoints, not new EndPoint(...).
+// This is because we only want one endpoint per address/port.
+exports.createEndPoint = function createEndPoint(local, onCreated) {
+
+    // Use an existing datagram socket if one exists.
+    var endPoint = exports.lookupEndPoint(local);
+    if (endPoint) {
+        process.nextTick(() => {
+            onCreated(endPoint);
+        });
+        return;
+    }
+
+    var endPoint = new exports.EndPoint(local, function (socketResult) {
+        if (!endPoints[socketResult.port]) endPoints[socketResult.port] = {};
+        endPoints[socketResult.port][socketResult.address] = endPoint;
+        onCreated(endPoint);
+    }, () => {});
+};
 
 // Binary search, implemented, as always, by taking a [peek at
 // Sedgewick](http://algs4.cs.princeton.edu/11model/BinarySearch.java.html).
@@ -452,6 +451,7 @@ function bySequence(left, right) {
 }
 
 const SYN_COOKIE_SALT = crypto.randomBytes(64).toString('binary');
+
 function synCookie(address, timestamp) {
     var hash = crypto.createHash('sha1');
     hash.update(SYN_COOKIE_SALT + ':' + address.host + ':' + address.port + ':' + timestamp);

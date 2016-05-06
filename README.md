@@ -29,6 +29,8 @@ Requires Node.Js >= 6.0.0
 
 # Usage
 
+Note: You must handle your own dns resolution if required. To host from localhost use 127.0.0.1 or to host from all addresses use 0.0.0.0
+
 # Overview of implementation
 
 ## Server

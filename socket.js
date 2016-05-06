@@ -30,6 +30,7 @@ module.exports = class Socket extends Stream {
         this._packet = new Buffer(1500);
         this._pending = [];
         this._sent = [[]];
+        this._timeout = 12000; // ms
     }
 
     _nextSequence() {
@@ -39,6 +40,16 @@ module.exports = class Socket extends Stream {
         } else {
             return ++socket._sequence;
         }
+    }
+    
+    setTimeout(timeout) {
+        if (timeout < 250) {
+            throw new Error('timeout must be greater than 250ms');
+        }
+        this._timeout = timeout;
+    }
+    getTimeout() {
+        return this._timeout;
     }
 
     connect(options, endPoint) {
@@ -61,15 +72,10 @@ module.exports = class Socket extends Stream {
             , port: endPoint.address.port
         };
 
-        if (typeof arguments[1] == 'function') {
-            socket.on('connect', arguments[1]);
-        }
-
         socket._connecting = true;
         socket._endPoint = endPoint;
 
         var valid = Helpers.validator(socket);
-
         // Generate random bytes used to set randomized socket properties.
         // `crypto.randomBytes` calls OpenSSL `RAND_bytes` to generate the bytes.
         //
