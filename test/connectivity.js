@@ -30,12 +30,11 @@ describe('Server', function () {
 
     it('should timeout correctly', function (done) {
 
-        // from https://github.com/nodejs/node/blob/master/test/internet/test-net-connect-timeout.js
         var start = new Date();
         var gotTimeout = false;
         var gotConnect = false;
         var T_err = 100;
-        var T = 250;
+        var T = 250; // minimum timeout
 
         // 192.0.2.1 is part of subnet assigned as "TEST-NET" in RFC 5737.
         // For use solely in documentation and example source code.
@@ -74,4 +73,20 @@ describe('Server', function () {
 
     });
 
+    it('should send and receive files uncorrupted', function(done) {
+        server.listen({
+                port: 4001
+                , address: '127.0.0.1'
+            }
+            , function () {
+                console.log("(Server: Sending file)");
+                
+            }
+            , function () {
+                var socket = udt.createConnection(4000, '127.0.0.1', function () {
+                    console.log('(Client: connected)');
+                });
+            });
+    });
+    
 });

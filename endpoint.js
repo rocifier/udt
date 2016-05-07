@@ -289,10 +289,6 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
             endPoint.send('handshake', handshake, rinfo);
         } else if (handshakeWithValidCookie(handshake, timestamp)) {
             // Create the socket and initialize it as a listener.
-            // At this point we're on a server.
-            // Todo: this is fucked up, a socket shouldn't be made here
-            // and an endpoint made in socket!
-            // could I solve this by creating the socket on the server handling the connection event?
             var socket = new Socket();
 
             socket._peer = rinfo;

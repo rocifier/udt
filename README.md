@@ -1,10 +1,9 @@
 # UDT
 
 A pure JavaScript implementation of UDP-based Data Transfer Protocol called UDT for Node.JS.
-The UDT specifications can be found at http://udt.sourceforge.net/doc/draft-gg-udt-03.txt
 It has the special purpose of real-time action game servers in mind but could of course be used for anything!
 
-In the long term this project is planned to be the basis for network communication in a full-blown open source MMO Node.JS clustered server framework.
+In the long term this project is planned to be the basis for network communication in a full-blown open source MMO Node.JS clustered server framework. For this reason rate control and congestion control are not implemented because fast response is a priority. However, it would be nice to have optional congestion control in the future.
 
 # Why would I use Node.Js on my realtime game server?
 
