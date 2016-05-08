@@ -26,6 +26,16 @@ Requires Node.Js >= 6.0.0
     cd yourprojectdir
     npm install rocifier/udt
 
+To run tests:
+    
+    mocha
+
+To debug tests using `debugger;` statement as breakpoint in iron-node:
+
+    npm run debug-mocha
+    
+This project uses ESLint for error checking, conventions, and style guide rules. The configuration for ESLint is inside package.json
+
 # Usage
 
 Note: You must handle your own dns resolution if required. To host from localhost use 127.0.0.1 or to host from all addresses use 0.0.0.0

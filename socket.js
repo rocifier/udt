@@ -2,13 +2,13 @@ const Stream = require('stream')
     , crypto = require('crypto')
     , Helpers = require('./helpers')
     , sendQueue = require('./sendqueue')
+    , common = require('./packetdefs')
     , CongestionControl = require('./congestioncontrol');
 
 // Total size of UDT data packet overhead, UDP header plus UDT data header.
 const UDP_HEADER_SIZE = 28;
 const UDT_DATA_HEADER_SIZE = 16;
 const MAX_MSG_NO = 0x1FFFFFFF;
-const MAX_SEQ_NO = Math.pow(2, 31) - 1;
 
 // Socket reference ID
 var socketId = crypto.randomBytes(4).readUInt32BE(0);
@@ -35,7 +35,7 @@ module.exports = class Socket extends Stream {
 
     _nextSequence() {
         var socket = this;
-        if (socket._sequence == MAX_SEQ_NO) {
+        if (socket._sequence == common.MAX_SEQ_NO) {
             return socket._sequence = 0;
         } else {
             return ++socket._sequence;
@@ -86,7 +86,7 @@ module.exports = class Socket extends Stream {
         // Initialize the randomized socket properies.
         function randomzied(buffer) {
             // Randomly generated randomness.
-            socket._sequence = buffer.readUInt32BE(0) % MAX_SEQ_NO;
+            socket._sequence = buffer.readUInt32BE(0) % common.MAX_SEQ_NO;
 
             // The end point sends a packet on our behalf.
             socket._endPoint.shakeHands(socket);

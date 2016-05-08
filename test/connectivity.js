@@ -17,13 +17,13 @@ describe('Server', function () {
                 , address: '127.0.0.1'
             }
             , function () {
-                console.log("(Server: Got local connection)");
+                console.log("\t(Server: Got local connection)");
                 server.close();
             }
             , function () {
-                console.log("(Server: Listening on " + server.address.address + ":" + server.address.port + ")");
+                console.log("\t(Server: Listening on " + server.address.address + ":" + server.address.port + ")");
                 var socket = udt.createConnection(4000, '127.0.0.1', function () {
-                    console.log('(Client: connected)');
+                    console.log('\t(Client: connected)');
                     done();
                     socket._endPoint.shutdown(socket, false);
                 });
@@ -44,7 +44,7 @@ describe('Server', function () {
         // In practice, it's a network black hole.
         var socket = udt.createConnection(9999, '192.0.2.1', () => {
             assert(false);
-            console.error('connect');
+            console.error('\tconnect');
             socket.destroy();
             done();
         });
@@ -60,7 +60,7 @@ describe('Server', function () {
 
         socket.setTimeout(T);
         socket.on('timeout', function () {
-            console.log('(Client: timed out as expected)');
+            console.log('\t(Client: timed out as expected)');
             gotTimeout = true;
             var now = new Date();
             assert.ok(now - start < T + 500);
@@ -69,7 +69,7 @@ describe('Server', function () {
         });
 
         socket.on('error', function () {
-            console.log('error');
+            console.log('\terror');
             done();
         });
 
@@ -85,7 +85,7 @@ describe('Server', function () {
             }
             , function () {
                 var socket = udt.createConnection(4001, '127.0.0.1', function () {
-                    console.log('(Client: connected)');
+                    console.log('\t(Client: connected)');
 
                     var valid = Helpers.validator(socket);
                     // Generate random bytes used to set randomized socket properties.

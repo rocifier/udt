@@ -1,5 +1,7 @@
 var packet = require('packet');
 
+exports.MAX_SEQ_NO = Math.pow(2, 31) - 1;
+
 var packets = exports.packets =
 { header: '\
     b8( \

@@ -7,10 +7,6 @@ const dgram = require('dgram')
     , sendQueue = require('./sendqueue')
     , common = require('./packetdefs');
 
-const CONTROL_TYPES = 'handshake keep-alive acknowledgement negative-ack'.split(/\s+/);
-const MAX_SEQ_NO = Math.pow(2, 31) - 1; // Todo: duplicate constant from socket.js
-
-
 // Reference counted cache of UDP datagram sockets.
 var endPoints = {};
 
@@ -221,33 +217,37 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                 if (header.destination) {
                     // TODO: Socket not found...
                     var socket = endPoint.sockets[header.destination];
+                    var controlType = ''; // reference into packetdefs
                     switch (header.type) {
-                        // Keep-alive.
+                    case 0x0:
+                        controlType = "handshake";
+                        break;
                     case 0x1:
+                        controlType = "keep-alive";
                         break;
-                        //Ack
                     case 0x2:
-                        
+                        controlType = "acknowledgement";
+                            
                         this._lastRcvExp = process.hrtime(); // Reset EXP timer
                         break;
-                        // Nak
                     case 0x3:
-                        
+                        controlType = "negative-ack";
+                            
                         this._lastRcvExp = process.hrtime(); // Reset EXP timer
                         break;
-                        // Shutdown.
                     case 0x5:
+                        controlType = "shutdown";
                         endPoint.shutdown(socket, false);
                         break;
-                        // Notifications from Bill the Cat. (Ack-ack.)
                     case 0x6:
+                        controlType = "ack-ack";
                         break;
-                        // Everything else
-                    default:
-                        var name = CONTROL_TYPES[header.type];
-                        parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header));
-                        
+                    default:    // Everything else
+                        //var name = CONTROL_TYPES[header.type];
+                        //parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header));
+                        console.log('received unsupported control packet type ' + header.type);
                     }
+                    parser.extract(controlType, endPoint[controlType].bind(endPoint, parser, socket, header));
                     // Todo: Make only the server socket accept handshakes.
                     // Todo: Rendezvous mode.
                 } else if (header.type == 0) {
@@ -461,7 +461,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
             socket._flowWindowSize++;
             // Advance to the socket's next sequence number. The manipulation of the
             // sent list occurs in both the `Socket` and the `EndPoint`.
-            socket._sequence = socket._sequence + 1 & MAX_SEQ_NO;
+            socket._sequence = socket._sequence + 1 & common.MAX_SEQ_NO;
             // When our sequence number wraps, we use a new array of sent packets. This
             // helps us handle acknowledgements of packets whose squence number is in
             // the vicinity of a wrap.
