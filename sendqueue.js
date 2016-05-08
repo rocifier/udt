@@ -12,7 +12,7 @@ class SendQueue {
     schedule(socket, timestamp) {
         socket._sendTime = timestamp; // Todo: use getter method
         queue.push(socket);
-        if (!sending) poll();
+        if (!sending) this.poll();
     }
 
     poll() {
@@ -20,7 +20,7 @@ class SendQueue {
         if (!queue.length) {
             sending = false;
         } else {
-            send();
+            this.send();
         }
     }
 
@@ -32,7 +32,7 @@ class SendQueue {
             socket = queue.pop();
             socket._endPoint.transmit(socket);
         }
-        process.nextTick(poll);
+        process.nextTick(this.poll);
     }
     
 };

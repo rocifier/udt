@@ -56,4 +56,10 @@ module.exports = class Helpers {
         };
     }
 
+    // better used on hrtime differences which will be much smaller numbers
+    // returns: decimal double representing the high resolution time in microseconds
+    static hrtimeToMicro(hrtime) {
+        return hrtime[0] * 1000000 + hrtime[1] / 1000;
+    }
+    
 };

@@ -4,6 +4,8 @@ var server = new Server();
 var EndPoint = require('../endpoint');
 var Socket = require('../socket');
 var udt = require('../udt');
+var Helpers = require('../helpers');
+var crypto = require('crypto');
 
 describe('Server', function () {
 
@@ -50,12 +52,12 @@ describe('Server', function () {
         var rejectsLowTimeout = false;
         try {
             socket.setTimeout(T_err);
-        } catch(error) {
+        } catch (error) {
             rejectsLowTimeout = true;
             console.log('\t(Client: low timeout correctly rejected)');
         }
         assert(rejectsLowTimeout);
-        
+
         socket.setTimeout(T);
         socket.on('timeout', function () {
             console.log('(Client: timed out as expected)');
@@ -73,20 +75,31 @@ describe('Server', function () {
 
     });
 
-    it('should send and receive files uncorrupted', function(done) {
+    it('should send and receive data blocks uncorrupted', function (done) {
         server.listen({
                 port: 4001
                 , address: '127.0.0.1'
             }
-            , function () {
-                console.log("(Server: Sending file)");
+            , function (socket) {
                 
             }
             , function () {
-                var socket = udt.createConnection(4000, '127.0.0.1', function () {
+                var socket = udt.createConnection(4001, '127.0.0.1', function () {
                     console.log('(Client: connected)');
+
+                    var valid = Helpers.validator(socket);
+                    // Generate random bytes used to set randomized socket properties.
+                    // `crypto.randomBytes` calls OpenSSL `RAND_bytes` to generate the bytes.
+                    //
+                    //  * [RAND_bytes](http://www.openssl.org/docs/crypto/RAND_bytes.html).
+                    //  * [node_crypto.cc](https://github.com/joyent/node/blob/v0.8/src/node_crypto.cc#L4517)
+                    crypto.randomBytes(40, valid(randomzied));
+                    function randomzied(buffer) {
+                        socket.write(buffer);
+                    }
+
                 });
             });
     });
-    
+
 });

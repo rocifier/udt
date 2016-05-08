@@ -7,12 +7,16 @@ const dgram = require('dgram')
     , sendQueue = require('./sendqueue')
     , common = require('./packetdefs');
 
-const CONTROL_TYPES = 'handshake keep-alive acknowledgement'.split(/\s+/);
+const CONTROL_TYPES = 'handshake keep-alive acknowledgement negative-ack'.split(/\s+/);
 const MAX_SEQ_NO = Math.pow(2, 31) - 1; // Todo: duplicate constant from socket.js
 
 
 // Reference counted cache of UDP datagram sockets.
 var endPoints = {};
+
+// SYN, the base timer reference interval
+const synInterval = 10000; // 0.01 seconds in microseconds
+const historyWindowSize = 16;
 
 // An endpoint is one end of a two-way socket; it controls the socket from that end.
 // This class uses a UDP datagram socket and provides additional functionality such as
@@ -36,8 +40,28 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                 onBind(endpoint.address);
             });
         });
+        
+        /* Receiving */
+        this._receiversLossList = new Array();
+        // ACK History Window: A circular array of each sent ACK and the time it is sent out. 
+        // The most recent value will overwrite the oldest one if no more free space in the array. 
+        this._ackHistoryWindow = new Array();
+        // PKT History Window: A circular array that records the arrival time of each data packet. 
+        this._pktHistoryWindow = new Array();
+        // Packet Pair Window: A circular array that records the time interval between each probing packet pair. 
+        this._pktPairWindow = new Array();
+        // number of continuous EXP time-out events 
+        this._expCount = 1;
+        // "Timers" for checking next receiver events
+        var now = process.hrtime();
+        this._lastRcvAck = now;
+        this._lastRcvNak = now;
+        this._lastRcvExp = now;
+        // Stats etc
+        this._lastDataPacketArrivalTime = 0;
+        
     }
-
+    
     shakeHands(socket) {
         // Stash the socket so we can track it by the socket identifier.
         this.sockets[socket._socketId] = socket;
@@ -160,9 +184,35 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         dgram.send(packet, 0, serializer.length, peer.port, peer.address);
     }
 
+    
     receive(msg, rinfo) {
         var endPoint = this
             , parser = common.parser;
+        
+        //    1) Query the system time to check if ACK, NAK, or EXP timer has 
+        //       expired. If there is any, process the event (as described below 
+        //       in this section) and reset the associated time variables. For 
+        //       ACK, also check the ACK packet interval.
+        var ackDiff = process.hrtime(this._lastRcvAck);
+        if (Helpers.hrtimeToMicro(ackDiff) >= synInterval) {
+            this._processAcks();
+            this._lastRcvAck = process.hrtime();
+        }
+        var nakDiff = process.hrtime(this._lastRcvNak);
+        if (Helpers.hrtimeToMicro(nakDiff) >= synInterval) {
+            this._processNaks();
+            this._lastRcvNak = process.hrtime();
+        }
+        var expDiff = process.hrtime(this._lastRcvExp);
+        if (Helpers.hrtimeToMicro(expDiff) >= synInterval) {
+            this._processExps();
+            this._lastRcvExp = process.hrtime();
+        }
+        
+        //    2) Start time bounded UDP receiving.
+        this._expCount = 1;
+        //    3) Check the flag bit of the packet header. If it is a control 
+        //       packet, process it according to its type
         parser.reset();
         parser.extract('header', function (header) {
             header.rinfo = rinfo;
@@ -175,6 +225,16 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                         // Keep-alive.
                     case 0x1:
                         break;
+                        //Ack
+                    case 0x2:
+                        
+                        this._lastRcvExp = process.hrtime(); // Reset EXP timer
+                        break;
+                        // Nak
+                    case 0x3:
+                        
+                        this._lastRcvExp = process.hrtime(); // Reset EXP timer
+                        break;
                         // Shutdown.
                     case 0x5:
                         endPoint.shutdown(socket, false);
@@ -185,15 +245,56 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                         // Everything else
                     default:
                         var name = CONTROL_TYPES[header.type];
-                        //console.log(name, header);
                         parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header));
+                        
                     }
                     // Todo: Make only the server socket accept handshakes.
                     // Todo: Rendezvous mode.
                 } else if (header.type == 0) {
                     parser.extract('handshake', endPoint.connect.bind(endPoint, rinfo, header));
                 }
-            } // else {}
+                
+            }  else { // data packet
+                //debugger;
+                
+                /*   4) if the seqNo of the current data packet is 16n+1,record the
+                time interval between this packet and the last data packet
+                in the packet pair window*/
+                var currentDataPacketArrivalTime = Helpers.hrtimeToMicro(process.hrtime());
+                if((header.sequence % 16) == 1 && endPoint._lastDataPacketArrivalTime > 0){
+                    var interval = currentDataPacketArrivalTime - endPoint._lastDataPacketArrivalTime;
+                    endPoint._packetPairWindow.add(interval);
+                }
+                endPoint._lastDataPacketArrivalTime = currentDataPacketArrivalTime;
+                
+                //   5) record the packet arrival time in the PKT History Window.
+                endPoint._pushPktToHistory(currentDataPacketArrivalTime);
+                
+                //   6)  
+                //    a. If the sequence number of the current data packet is greater 
+                //       than LRSN + 1, put all the sequence numbers between (but 
+                //       excluding) these two values into the receiver's loss list and 
+                //       send them to the sender in an NAK packet.
+                if (typeof endPoint._lrsn == 'number') { // Todo: is this a fast way to check the variable has been defined (when handshaking)?
+                    if (header.sequence > endPoint._lrsn+1) {
+                        // will this work when the sequence number wraps?
+                        for (var i=endPoint._lrsn+1; i<header.sequence; i++) {
+                            endPoint._pushLostPacket(i);
+                            endPoint._sendNak(i);
+                        }
+                    //    b. If the sequence number is less than more recent LRSN, remove it from the 
+                    //       receiver's loss list. 
+                    } else if (header.sequence < endPoint._lrsn) {
+                        endPoint._removeLostPacket(header.sequence);
+                    }
+                    
+                    //   7) Update LRSN. Go to 1). 
+                    if (header.sequence > endPoint._lrsn) {
+                        endPoint._lrsn = header.sequence;
+                    }
+                }
+                
+            }
         });
         parser.parse(msg);
     }
@@ -231,6 +332,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
             socket._status = 'connected';
             socket._handshake = handshake;
             socket._peer.socketId = handshake.socketId;
+            this._lrsn = socket._socketId-1;
 
             socket.emit('connect');
             break;
@@ -254,6 +356,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
     }
 
     lightAcknowledgement(socket, header, ack) {
+        debugger;
         var endPoint = this
             , sent = socket._sent
             , sequence = sent[0]
@@ -375,6 +478,52 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         }
     }
 
+    _processAcks() {
+        
+    }
+    
+    _processNaks() {
+        
+    }
+    
+    _processExps() {
+        
+    }
+    
+    _pushLostPacket(sequencenumber) {
+        this._receiversLossList.unshift(sequencenumber);
+    }
+    
+    _removeLostPacket(sequencenumber) {
+        var index = array.indexOf(sequencenumber);
+        if (index > -1) {
+            array.splice(index, 1);
+        } else {
+            console.log('tried to remove packet from loss list, but it wasn not on there');
+        }
+    }
+    
+    _pushPktPair(element) {
+        if(this._pktPairWindow.length == historyWindowSize){
+            this._pktPairWindow.pop();
+        }
+        this._pktPairWindow.unshift(element);
+    }
+    
+    _pushAckToHistory(element) {
+        if(this._ackHistoryWindow.length == historyWindowSize){
+            this._ackHistoryWindow.pop();
+        }
+        this._ackHistoryWindow.unshift(element);
+    }
+    
+    _pushPktToHistory(element) {
+        if(this._pktHistoryWindow.length == historyWindowSize){
+            this._pktHistoryWindow.pop();
+        }
+        this._pktHistoryWindow.unshift(element);
+    }
+    
 };
 
 // Look up an UDP datagram socket in the cache of bound UDP datagram sockets by
