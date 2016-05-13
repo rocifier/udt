@@ -12,7 +12,6 @@ const MAX_MSG_NO = 0x1FFFFFFF;
 
 // Socket reference ID
 var socketId = crypto.randomBytes(4).readUInt32BE(0);
-
 function nextSocketId() {
     if (socketId == 1) socketId = Math.pow(2, 32);
     return --socketId;
@@ -25,11 +24,13 @@ module.exports = class Socket extends Stream {
         super();
         this._socketId = nextSocketId();
         this._messageNumber = 1;
-        this._flowWindowSize = 0;
+        this._flowWindowSize = 16;
         this._ccc = new CongestionControl;
         this._packet = new Buffer(1500);
         this._pending = [];
-        this._sent = [[]];
+        // Todo: periodic health checks on _sent to avoid memory leaks
+        this._sent = new Map(); // sequence numbers => packets. Todo: binary tree with sequence number as index.
+        this._sendersLossList = []; // sequence number which indexes into above map
         this._timeout = 12000; // ms
     }
 
@@ -39,6 +40,35 @@ module.exports = class Socket extends Stream {
             return socket._sequence = 0;
         } else {
             return ++socket._sequence;
+        }
+    }
+    
+    // Remove all references from the senders loss list less than maxSequenceAcked
+    // max T(4N)
+    purgeSendHistory(maxSequenceAcked) {
+        // remove from sender's loss list
+        var toRemove = [];
+        for (var seq in this._sendersLossList) {
+            if (seq < maxSequenceAcked) toRemove.push(seq);
+        }
+        for (var seq in toRemove) {
+            this._removePktFromLossList(seq);
+        }
+        // remove from send buffer
+        toRemove = [];
+        for (var key in this._send.keys()) {
+            if (key < maxSequenceAcked) toRemove.push(key);
+        }
+        for (var key in toRemove) {
+            this._send.remove(key);
+        }
+        
+    }
+    
+    _removeFromLossList(sequence) {
+        var i = this._sendersLossList.indexOf(sequence);
+        if(i != -1) {
+            this._sendersLossList.splice(i, 1);
         }
     }
     
@@ -106,8 +136,6 @@ module.exports = class Socket extends Stream {
     // All this copying and allocation is disheartening. This is a place that needs
     // the attention of some benchmarks. If you can think of a way to avoid the
     // copying, please let me know. Nothing's occurring to me.
-
-    //
     write(buffer) {
         var socket = this
             , handshake = socket._handshake

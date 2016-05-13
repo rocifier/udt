@@ -19,6 +19,8 @@ Native C++ will use a smaller memory footprint and be slightly faster overall th
 
 This implementation is not yet in a usable state.
 
+Current tasks: Receiver and sender logic
+
 # Installation
 
 Requires Node.Js >= 6.0.0
@@ -30,7 +32,7 @@ To run tests:
     
     mocha
 
-To debug tests using `debugger;` statement as breakpoint in iron-node:
+To debug tests use `debugger;` statements in code as breakpoints for iron-node:
 
     npm run debug-mocha
     
@@ -41,6 +43,8 @@ This project uses ESLint for error checking, conventions, and style guide rules.
 Note: You must handle your own dns resolution if required. To host from localhost use 127.0.0.1 or to host from all addresses use 0.0.0.0
 
 # Overview of implementation
+
+This implementation is based directly off the draft spec at http://udt.sourceforge.net/doc/draft-gg-udt-03.txt
 
 ## Server
 

@@ -29,9 +29,11 @@ var packets = exports.packets =
   , b32 => address \
   , x96{0} \
   '
-, acknowledgement: '\
-    b32 => sequence  \
-  '
+, acknowledgement: ''
+, negativeack: ''
+, ack2: ''
+, shutdown: ''
+, keepalive: ''
 , statistics: '\
     b32 => rtt \
   , b32 => rttVariance \

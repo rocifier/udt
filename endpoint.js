@@ -55,6 +55,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         this._lastRcvExp = now;
         // Stats etc
         this._lastDataPacketArrivalTime = 0;
+        this._largestAcknowledgedAckNumber = -1;
         
     }
     
@@ -162,12 +163,14 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                 clearInterval(socket._handshakeInterval);
                 socket.emit('timeout', new Error('connection timeout'));
             } else {
-                endPoint.send('handshake', handshake, socket._peer);
+                endPoint.send('handshake', handshake, socket);
             }
         }, freq);
     }
 
-    send(packetType, object, peer) {
+    // send to a port and address without keeping a history of this packet.
+    // currently used to initiate handshaking before a socket has been established.
+    sendRaw(packetType, object, peer) {
         var serializer = common.serializer
             , packet = this.packet
             , dgram = this.dgram;
@@ -175,9 +178,57 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         serializer.reset();
         serializer.serialize(packetType, object);
         serializer.write(packet);
-
+        
         //console.log("Sending packet " + packetType + " to " + peer.address + ":" + peer.port);
         dgram.send(packet, 0, serializer.length, peer.port, peer.address);
+    }
+
+    // send to socket's peer keeping a history and expecting ACK.
+    // this function will also re-transmit lost packets first.
+    send(packetType, object, socket) {
+        var serializer = common.serializer
+            , packet = this.packet
+            , peer = socket._peer
+            , dgram = this.dgram;
+
+        // 1) Priority: If the sender's loss list is not empty, retransmit the first 
+        //    packet in the list and remove it from the list.
+        if (socket._sendersLossList.length > 0) {
+            var lostPacketSequence = socket._sendersLossList.shift();
+            var lostPacket = socket._sent.get(lostPacketSequence);
+            socket._sent.remove(lostPacketSequence);
+            dgram.send(lostPacket, 0, lostPacket.length, peer.port, peer.address);
+        }
+        
+        if (packet.sequence%16 == 0) {
+            //2) In messaging mode, if the packets has been the loss list for a 
+            //   time more than the application specified TTL (time-to-live), send 
+            //   a message drop request and remove all related packets from the 
+            //   loss list.
+            
+        }
+        
+        //4)  
+        //  a. If the number of unacknowledged packets exceeds the 
+        //     flow/congestion window size, wait until an ACK comes.
+        
+        //  b. Pack a new data packet and send it out. 
+        serializer.reset();
+        serializer.serialize(packetType, object);
+        serializer.write(packet);
+        
+        //6) Wait SND time, where SND is the inter-packet interval 
+        //   updated by congestion control
+      
+        // push packet onto send history
+        socket._sent.set(packet.sequence, packet);
+        
+        //console.log("Sending packet " + packetType + " to " + peer.address + ":" + peer.port);
+        dgram.send(packet, 0, serializer.length, peer.port, peer.address);
+    }
+    
+    _sendTimer() {
+        
     }
 
     
@@ -190,12 +241,12 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         //       in this section) and reset the associated time variables. For 
         //       ACK, also check the ACK packet interval.
         var ackDiff = process.hrtime(this._lastRcvAck);
-        if (Helpers.hrtimeToMicro(ackDiff) >= synInterval) {
+        if (Helpers.hrtimeToMicro(ackDiff) >= synInterval*20) { // Todo: adjust in relation to RTT
             this._processAcks();
             this._lastRcvAck = process.hrtime();
         }
         var nakDiff = process.hrtime(this._lastRcvNak);
-        if (Helpers.hrtimeToMicro(nakDiff) >= synInterval) {
+        if (Helpers.hrtimeToMicro(nakDiff) >= synInterval*20) {
             this._processNaks();
             this._lastRcvNak = process.hrtime();
         }
@@ -223,30 +274,30 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                         controlType = "handshake";
                         break;
                     case 0x1:
-                        controlType = "keep-alive";
+                        controlType = "keepalive";
                         break;
                     case 0x2:
                         controlType = "acknowledgement";
-                            
-                        this._lastRcvExp = process.hrtime(); // Reset EXP timer
+                        endPoint._lastRcvExp = process.hrtime(); // Reset EXP timer
                         break;
                     case 0x3:
-                        controlType = "negative-ack";
-                            
-                        this._lastRcvExp = process.hrtime(); // Reset EXP timer
+                        controlType = "negativeack";
+                        endPoint._lastRcvExp = process.hrtime(); // Reset EXP timer
                         break;
                     case 0x5:
                         controlType = "shutdown";
-                        endPoint.shutdown(socket, false);
                         break;
                     case 0x6:
-                        controlType = "ack-ack";
+                        controlType = "ack2";
                         break;
-                    default:    // Everything else
-                        //var name = CONTROL_TYPES[header.type];
-                        //parser.extract(name, endPoint[name].bind(endPoint, parser, socket, header));
-                        console.log('received unsupported control packet type ' + header.type);
+                    case 0x7:
+                        controlType = "messagedrop";
+                        break;
+                    default:
+                        console.log('received unsupported control packet type: ' + header.type);
+                        break;
                     }
+                    // This calls the function in this class named [controlType]
                     parser.extract(controlType, endPoint[controlType].bind(endPoint, parser, socket, header));
                     // Todo: Make only the server socket accept handshakes.
                     // Todo: Rendezvous mode.
@@ -275,7 +326,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
                 //       than LRSN + 1, put all the sequence numbers between (but 
                 //       excluding) these two values into the receiver's loss list and 
                 //       send them to the sender in an NAK packet.
-                if (typeof endPoint._lrsn == 'number') { // Todo: is this a fast way to check the variable has been defined (when handshaking)?
+                if (typeof endPoint._lrsn === 'number') { // Todo: is this a fast way to check the variable has been defined (when handshaking)?
                     if (header.sequence > endPoint._lrsn+1) {
                         // will this work when the sequence number wraps?
                         for (var i=endPoint._lrsn+1; i<header.sequence; i++) {
@@ -340,27 +391,43 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
     }
 
     acknowledgement(parser, socket, header, ack) {
+        //1) Update the largest acknowledged sequence number. 
+        this._lrsn = Math.max(this._lrsn, header.sequence);
+        // Todo:
+        //3) Update RTT and RTTVar. 
+        //4) Update both ACK and NAK period to 4 * RTT + RTTVar + SYN. 
+
         // All parsing in one fell swoop so we don't do something that causes a next
         // tick which might cause the parser to be reused.
         if (header.length == 40) {
-            parser.extract('statistics', this.fullAcknowledgement.bind(this, socket, header, ack));
+            parser.extract('statistics', this._fullAcknowledgement.bind(this, socket, header, ack));
         } else {
-            this.lightAcknowledgement(socket, header, ack);
+            this._lightAcknowledgement(socket, header, ack);
         }
     }
 
-    // Remove the sent packets that have been received.
-    fullAcknowledgement(socket, header, ack, stats) {
+    // sender
+    _fullAcknowledgement(socket, header, ack, stats) {
         this.lightAcknowledgement(socket, header, ack);
-        Helpers.say(socket._flowWindowSize, socket._sent[0].length, header, ack, stats);
+        Helpers.say(socket._flowWindowSize, socket._sent.keys().length, header, ack, stats);
+        //7) Update packet arrival rate: A = (A * 7 + a) / 8, where a is the 
+        //   value carried in the ACK. 
+        //8) Update estimated link capacity: B = (B * 7 + b) / 8, where b is 
+        //   the value carried in the ACK. 
+        //9) Update sender's buffer (by releasing the buffer that has been 
+        //   acknowledged). 
+        //10)Update sender's loss list (by removing all those that has been 
+        //   acknowledged).
+        socket.purgeSendHistory(header.sequence);
     }
 
-    lightAcknowledgement(socket, header, ack) {
+    _lightAcknowledgement(socket, header, ack) {
         debugger;
         var endPoint = this
             , sent = socket._sent
             , sequence = sent[0]
             , index;
+        /*
         index = binarySearch(bySequence, sequence, ack);
         if (index != -1 && sent.length == 2) {
             socket._flowWindowSize -= sent[1].length;
@@ -370,13 +437,54 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
             sequence = sent[1];
             index = binarySearch(bySequence, sequence, ack);
         }
+        
+        //5) Update flow window size. 
         socket._flowWindowSize -= sequence.splice(0, index).length;
+        */
+        //2) Send back an ACK2 with the same ACK sequence number in this ACK.
         endPoint.control(socket, 'header', {
             type: 0x6
             , additional: header.additional
         });
     }
 
+    // sender
+    negativeack(parser, socket, header, nak) {
+        //1) Add all sequence numbers carried in the NAK into the sender's loss 
+        //   list.
+        
+        //2) Update the SND period by rate control (see section 3.6). 
+        //3) Reset the EXP time variable. 
+    
+    }
+    
+    // receiver
+    ack2(parser, socket, header, ack2) {
+        
+        //1) Locate the related ACK in the ACK History Window according to the 
+        //   ACK sequence number in this ACK2. 
+        var ack = this._ackHistoryWindow.indexOf(ack2.sequence);
+        if (ack) {
+            //2) Update the largest ACK number ever been acknowledged. 
+            largestAcknowledgedAckNumber=Math.max(ack2.sequence, largestAcknowledgedAckNumber);
+            //3) Calculate new rtt according to the ACK2 arrival time and the ACK 
+            //   departure time, and update the RTT value as: RTT = (RTT * 7 + rtt) / 8. 
+            //4) Update RTTVar by: RTTVar = (RTTVar * 3 + abs(RTT - rtt)) / 4. 
+            //5) Update both ACK and NAK period to 4 * RTT + RTTVar + SYN. 
+        }
+    
+    }
+    
+    // receiver
+    messagedrop(parser, socket, header, msgdrop) {
+        //1) Tag all packets belong to the message in the receiver buffer so 
+        //   that they will not be read. 
+        //2) Remove all corresponding packets in the receiver's loss list. 
+        for (var i=msgdrop.firstSequence; i<=msgdrop.lastSequence; i++) {
+            _removeRcvLostPacket(i);
+        }
+    }
+    
     connect(rinfo, header, handshake) {
         var endPoint = this;
         var timestamp = Math.floor(Date.now() / 6e4);
@@ -389,7 +497,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         if (handshake.connectionType == 1) {
             handshake.destination = handshake.socketId;
             handshake.synCookie = synCookie(rinfo, timestamp);
-            endPoint.send('handshake', handshake, rinfo);
+            endPoint.sendRaw('handshake', handshake, rinfo);
         } else if (handshakeWithValidCookie(handshake, timestamp)) {
             // Create the socket and initialize it as a listener.
             var socket = new Socket();
@@ -407,7 +515,7 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
             handshake.destination = handshake.socketId;
             handshake.socketId = socket._socketId;
 
-            endPoint.send('handshake', handshake, rinfo);
+            endPoint.send('handshake', handshake, socket);
 
             endPoint.emit('connection', socket);
         }
@@ -458,17 +566,19 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         }
 
         if (enqueue) {
-            socket._flowWindowSize++;
+            //socket._flowWindowSize++;
             // Advance to the socket's next sequence number. The manipulation of the
             // sent list occurs in both the `Socket` and the `EndPoint`.
             socket._sequence = socket._sequence + 1 & common.MAX_SEQ_NO;
             // When our sequence number wraps, we use a new array of sent packets. This
             // helps us handle acknowledgements of packets whose squence number is in
             // the vicinity of a wrap.
-            if (socket._sequence == 0) {
-                socket._sent.unshift([]);
-            }
-            socket._sent[0].push(message);
+            //if (socket._sequence == 0) {
+            //    socket._sent.unshift([]);
+            //}
+            //socket._sent[0].push(message);
+            // push packet onto send history window
+            socket._sent.set(message.sequence, message);
         }
 
         // TODO: Something like this, but after actually calculating the time of the
@@ -490,16 +600,16 @@ exports.EndPoint = class EndPoint extends events.EventEmitter {
         
     }
     
-    _pushLostPacket(sequencenumber) {
+    _pushRcvLostPacket(sequencenumber) {
         this._receiversLossList.unshift(sequencenumber);
     }
     
-    _removeLostPacket(sequencenumber) {
-        var index = array.indexOf(sequencenumber);
+    _removeRcvLostPacket(sequencenumber) {
+        var index = this._receiversLossList.indexOf(sequencenumber);
         if (index > -1) {
-            array.splice(index, 1);
+            this._receiversLossList.splice(index, 1);
         } else {
-            console.log('tried to remove packet from loss list, but it wasn not on there');
+            console.log('tried to remove packet from receiver loss list, but it was not on there');
         }
     }
     

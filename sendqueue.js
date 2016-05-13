@@ -8,7 +8,7 @@ var before = Helpers.sooner('_sendTime')
 class SendQueue {
 
     constructor() {}
-
+    
     schedule(socket, timestamp) {
         socket._sendTime = timestamp; // Todo: use getter method
         queue.push(socket);
